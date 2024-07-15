@@ -1,0 +1,6 @@
+[build]
+target = "aarch64-unknown-none"
+
+[target.aarch64-unknown-none]
+rustflags = ['-Clink-arg=-Tvirt.ld', '-Crelocation-model=pic', '-Clink-arg=-pie', '-Clink-arg=-znotext']
+runner = "qemu-system-aarch64 -cpu cortex-a76 -M virt,gic-version=3 -serial mon:stdio -nographic -device loader,addr=0x40800000,cpu-num=0,file=target/aarch64-unknown-none/debug/shiny_salmon.o"
