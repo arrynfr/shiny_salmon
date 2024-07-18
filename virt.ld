@@ -1,7 +1,8 @@
-ENTRY(start)
+ENTRY(_preamble)
 _alignment = 0x10000;
 
-. = 0x40800000;
+/*. = 0x40800000;*/
+. = 0;
 
 PHDRS {
 	segment_text	PT_LOAD FLAGS(5);
@@ -21,6 +22,11 @@ SECTIONS {
 	.rodata : ALIGN(_alignment) {
 		*(.rodata*)
 	} :segment_rodata
+	    .rela.dyn : ALIGN(_alignment) {
+        _rela_start = .;
+        *(.rela.*)
+        _rela_end = .;
+    } :segment_rodata
 	.bss (NOLOAD) : ALIGN(_alignment) {
 		_bss_start = .;
 		*(.sbss .sbss.*)

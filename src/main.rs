@@ -2,49 +2,47 @@
 #![no_std]
 #![feature(asm_const)]
 
-use core::panic::PanicInfo;
+use core::{arch::asm, panic::PanicInfo};
 use core::arch::global_asm;
 use crate::spinlock::SpinLock;
-use core::ops::{Deref, DerefMut};
+use crate::driver::smp::init_smp;
+use crate::driver::serial::Serial;
+
+#[macro_use]
+mod print;
 mod spinlock;
+mod driver;
+mod exception;
 
 #[panic_handler]
-fn panic(_info: &PanicInfo) -> ! {
-    serial_puts("PANIC!!!");
-    loop{}
+fn panic(info: &PanicInfo) -> ! {
+    kprintln!("Core {} panicked at {}:\r\n{}",
+    get_core_id(),
+    info.location().unwrap(),
+    info.message());
+    loop{
+        unsafe {
+            asm!("wfi",
+            "wfe");
+        }
+    }
 }
 
+const NUM_CORES: usize = 4;
 const STACK_SIZE: usize = 4096;
 #[used]
 #[no_mangle]
 #[link_section = ".stack"]
-static mut STACK: [u8; STACK_SIZE] = [0; STACK_SIZE];
+static mut STACK: [u8; STACK_SIZE*NUM_CORES] = [0; STACK_SIZE*NUM_CORES];
 
-global_asm!(r#"
-    .section .text._start
-    .global _start
-    .type _start, @function
-
-    _start:
-        #Enable floating point bits FPEN
-        mrs x7, cpacr_el1
-        mov x8, #(3 << 20)
-        orr x7, x8, x7
-        msr cpacr_el1, x7
-        
-        #Set up stack
-        adr x7, {}
-        mov sp, x7
-        add sp, sp, {}
-        
-        bl clear_bss
-        bl main
-        b .
-"#, sym STACK, const STACK_SIZE);
+global_asm!(include_str!("boot.s"), sym STACK, const STACK_SIZE);
+global_asm!(include_str!("exception.s"));
 
 extern "C" {
     static _bss_start: u8;
     static _bss_end: u8;
+    static _start: u8;
+    static _base: u8;
 }
 
 #[no_mangle]
@@ -60,30 +58,40 @@ pub extern fn clear_bss() {
     }
 }
 
-const SERIAL_ADDR: *mut u8 = 0x0900_0000 as *mut u8;
-fn serial_putc(c: char) {
+fn _get_mpid() -> u64 {
+    let mpid: u64;
     unsafe {
-        SERIAL_ADDR.write_volatile(c as u8);
+        asm!("mrs {}, mpidr_el1", out(reg) mpid);
     }
+    mpid & 0xFF
 }
 
-fn serial_puts(string: &str) {
-    for c in string.chars() {
-        serial_putc(c);
+fn get_core_id() -> u64 {
+    let tpid: u64;
+    unsafe {
+        asm!("mrs {}, tpidr_el1", out(reg) tpid)
     }
+    tpid
 }
+
+static SERIAL_CONSOLE: SpinLock<Serial> = SpinLock::new(Serial {
+    serial_addr: 0x0900_0000 as *mut u8
+});
 
 #[no_mangle]
 pub extern fn main() {
-    let t = SpinLock::new(0x41_u8);
-    {
-        let x = t.aquire();
-        let num = x.deref();
-        serial_putc(*num as char);
+    if get_core_id() == 0 {
+        unsafe {
+            kprint!("Hello world at {:x}!\r\n", &_base as *const u8 as usize);
+            let x = &_start as *const u8 as *const fn();
+            init_smp(x);
+            kprintln!("SMP init successful!");
+            
+        }
+    } else { 
+        let core_id = get_core_id() as u8;
+        kprintln!("Hello from core: {core_id}");
     }
-    let x = t.aquire();
-    t.release();
-    serial_puts("Hello world!\r\n");
     loop{}
 }
 

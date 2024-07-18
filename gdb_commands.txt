@@ -1,0 +1,4 @@
+target remote localhost:1234
+layout asm
+layout regs
+add-symbol-file target/aarch64-unknown-none/debug/shiny_salmon 0x40800000

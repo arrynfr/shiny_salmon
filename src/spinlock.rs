@@ -53,7 +53,7 @@ impl <T> SpinLock<T> {
     }
 
     pub fn release(&self) {
-        unsafe {if *self.cpu.get() == 0 {
+        unsafe {if *self.cpu.get() != 0 {
             panic!("Trying to release lock aquired by another thread!");
         }}
         self.locked.store(false, Ordering::Release);
